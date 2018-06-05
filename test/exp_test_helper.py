@@ -11,6 +11,7 @@ import time
 
 from util import wait_for_qsub, get_git_hash
 
+
 class ExpTestHelper(object):
 
     def __init__(self, exp_name):
@@ -20,16 +21,16 @@ class ExpTestHelper(object):
 
         self.my_path = os.path.dirname(os.path.realpath(__file__))
         self.lab_path = os.path.realpath(os.path.join(self.my_path, '../'))
-        self.input_path = os.path.realpath(os.path.join(self.lab_path, 'input'))
+        self.inp_path = os.path.realpath(os.path.join(self.lab_path, 'input'))
         self.bin_path = os.path.join(self.lab_path, 'bin')
         self.control_path = os.path.join(self.lab_path, 'control')
         self.exp_path = os.path.join(self.control_path, exp_name)
         self.archive = os.path.join(self.lab_path, 'archive', exp_name)
+        self.output000 = os.path.join(self.archive, 'output000')
         self.src = os.path.join(self.lab_path, 'src')
 
-        self.oasis_src = os.path.join(self.src, 'oasis3-mct')
+        self.libaccessom2_src = os.path.join(self.src, 'libaccessom2')
         self.mom_src = os.path.join(self.src, 'mom')
-        self.matm_src = os.path.join(self.src, 'matm')
         self.cice5_src = os.path.join(self.src, 'cice5')
 
         if not os.path.exists(self.bin_path):
@@ -51,8 +52,7 @@ class ExpTestHelper(object):
         See wether this experiment has been run.
         """
 
-        return os.path.exists(self.archive)
-
+        return os.path.exists(os.path.join(self.output000, 'access-om2.out'))
 
     def make_paths(self, exp_name, run_num=0):
         paths = {}
@@ -79,7 +79,7 @@ class ExpTestHelper(object):
 
     def get_most_recent_run_num(self, archive_path):
         """
-        Look in the archive directory to find which build this is. 
+        Look in the archive directory to find which build this is.
         """
 
         dirs = glob.glob(archive_path + '/output*')
@@ -87,14 +87,15 @@ class ExpTestHelper(object):
 
         return int(dirs[-1][-3:])
 
-
     def do_basic_access_run(self, exp, model='cm'):
-
         paths = self.make_paths(exp)
         ret, qso, qse, qsub_files = self.run(paths['exp'], self.lab_path)
         if ret != 0:
-            self.print_output([qso, qse, paths['stdout_runtime'], paths['stderr_runtime']])
-            print('Run {} failed with code {}.'.format(exp, ret), file=sys.stderr)
+            self.print_output([qso, qse,
+                               paths['stdout_runtime'],
+                               paths['stderr_runtime']])
+            fstring = 'Run {} failed with code {}.'
+            print(fstring.format(exp, ret), file=sys.stderr)
         assert(ret == 0)
 
         run_num = self.get_most_recent_run_num(paths['archive'])
@@ -112,7 +113,6 @@ class ExpTestHelper(object):
             if model == 'om':
                 assert('********** End of MATM **********' in s)
 
-
     def copy_to_bin(self, src_dir, wildcard):
         exes = glob.glob(wildcard)
         if exes == []:
@@ -122,31 +122,24 @@ class ExpTestHelper(object):
 
         for e in exes:
             eb = os.path.basename(e)
-            new_name = '{}_{}.{}'.format(eb.split('.')[0], ghash, 
+            new_name = '{}_{}.{}'.format(eb.split('.')[0], ghash,
                                          eb.split('.')[1])
             shutil.copy(e, os.path.join(self.bin_path, new_name))
 
         return 0
 
-    def build_oasis(self):
-        return sp.call(['make', '-C', self.oasis_src])
-
-    def build_matm(self):
-        os.environ['OASIS_ROOT'] = os.path.join(self.oasis_src)
-        ret = sp.call(['make', '-C', self.matm_src])
-        ret += self.copy_to_bin(self.matm_src,
-                                self.matm_src + '/build_*/*.exe')
-        return ret
+    def build_libaccessom2(self):
+        return sp.call([os.path.join(self.libaccessom2_src, 'build_on_raijin.sh')])
 
     def build_cice5(self):
-        os.environ['OASIS_ROOT'] = os.path.join(self.oasis_src)
+        os.environ['LIBACCESSOM2_ROOT'] = os.path.join(self.libaccessom2_src)
         ret = sp.call(['make', '-C', self.cice5_src, self.res])
         ret += self.copy_to_bin(self.cice5_src,
                                 self.cice5_src + '/build_*/*.exe')
         return ret
 
     def build_mom(self):
-        os.environ['OASIS_ROOT'] = os.path.join(self.oasis_src)
+        os.environ['LIBACCESSOM2_ROOT'] = os.path.join(self.libaccessom2_src)
         mydir = os.getcwd()
         os.chdir(os.path.join(self.mom_src, 'exp'))
         ret = sp.call(['./MOM_compile.csh', '--type', 'ACCESS-OM',
@@ -162,10 +155,9 @@ class ExpTestHelper(object):
         if self.has_built():
             return 0
 
-        ret = self.build_oasis()
+        ret = self.build_libaccessom2()
         if ret != 0:
             return ret
-        ret += self.build_matm()
         ret += self.build_cice5()
         ret += self.build_mom()
 
@@ -181,7 +173,7 @@ class ExpTestHelper(object):
         if self.has_run():
             return 0, None, None, None
         else:
-            return self.force_run()        
+            return self.force_run()
 
     def force_run(self):
         """
@@ -219,7 +211,7 @@ class ExpTestHelper(object):
 
         # Read qsub stderr file
         stderr_filename = glob.glob(os.path.join(self.exp_path,
-                                                '*.e{}'.format(run_id)))
+                                                 '*.e{}'.format(run_id)))
         stderr = ''
         if len(stderr_filename) == 1:
             stderr_filename = stderr_filename[0]

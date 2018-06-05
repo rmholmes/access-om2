@@ -1,4 +1,8 @@
 
+import os
+import time
+import subprocess as sp
+
 def wait_for_qsub(run_id):
     """
     Wait for the qsub job to terminate.
@@ -15,6 +19,7 @@ def wait_for_qsub(run_id):
         if 'Job has finished' in qsub_out:
             break
 
+
 def get_git_hash(src_dir):
     """
     Get the git hash of src_dir.
@@ -25,4 +30,3 @@ def get_git_hash(src_dir):
     os.chdir(mydir)
 
     return ghash
-

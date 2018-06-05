@@ -1,12 +1,35 @@
+[![Build Status](https://travis-ci.org/a-parkinson/access-om2.svg?branch=master)](https://travis-ci.org/a-parkinson/access-om2)
+
 # ACCESS-OM2 pre-release
 
 ACCESS-OM2 is a coupled ice and ocean global model. It is being developed through a collaboration with [COSIMA](http://www.cosima.org.au), [ARCCSS](http://www.arccss.org.au) and [CSIRO](http://www.csiro.au). It builds on the ACCESS-OM model originally developed at CSIRO [1].
 
 The model consists of [MOM5.1](http://mom-ocean.science), [CICE5.1](http://oceans11.lanl.gov/trac/CICE), and a file-based atmosphere. The models are coupled together using the [OASIS3-MCT](https://portal.enes.org/oasis) coupler and regridding is done using ESMF_RegridWeightGen from [ESMF](https://www.earthsystemcog.org/projects/esmf/) and [KDTREE2](https://github.com/jmhodges/kdtree2).
 
-ACCESS-OM2 comes with a number of standard experiments. These configurations include ice and ocean at 1, 1/4 and 1/10th degree resolution. [JRA-55 v1.3](http://jra.kishou.go.jp/JRA-55/index_en.html) forcing is supported at all three resolutions and [CORE2](http://www.clivar.org/clivar-panels/omdp/core-2) forcing is supported at 1 degree resolution. JRA-55 repeat-year forcing forcing (RYF) and CORE normal-year forcing (NYF) are currently supported, but interannual forcing will be supported soon.
+ACCESS-OM2 comes with a number of standard experiments. These configurations include ice and ocean at 1, 1/4 and 1/10th degree resolution. [JRA-55 v1.3](http://jra.kishou.go.jp/JRA-55/index_en.html) forcing is supported at all three resolutions and [CORE2](http://www.clivar.org/clivar-panels/omdp/core-2) forcing is supported at 1 degree resolution. JRA-55 repeat-year forcing forcing (RYF) and CORE normal-year forcing (NYF) are currently supported, and interannual forcing will be supported soon.
 
 This document describes how to download, compile and run the model. The instructions have only been tested on the [NCI](http://www.nci.org.au) raijin supercomputer.
+
+## Quick start for NCI Raijin users
+
+The following 8 steps will run the 0.25 degree JRA55 RYF experiment.
+
+```{bash}
+cd /short/${PROJECT}/${USER}/
+mkdir -p access-om2/control
+cd access-om2/control
+git clone https://github.com/OceansAus/025deg_jra55_ryf.git
+cd 025deg_jra55_ryf
+```
+
+Edit the `shortpath` line in the `config.yaml` to reflect your ${PROJECT}. Then:
+
+```{bash}
+module load payu/dev
+payu run
+```
+
+It may be necessary to add the `module load payu/dev' to your .bashrc
 
 ## Prerequisites
 
@@ -17,8 +40,6 @@ The ACCESS-OM2 depends on the following software:
 * a fortran compiler such as gfortran or intel-fc.
 * an MPI implementation such as OpenMPI.
 * Python and [pytest](https://docs.pytest.org) to run the tests (optional).
-
-To use JRA-55 on NCI you need to be a member of the ua8 project - apply via <https://my.nci.org.au>
 
 ## Install
 
@@ -34,6 +55,8 @@ cd access-om2
 ```
 
 or if you have an existing download and would like to update to the latest version:
+**WARNING:** `git submodule update` will overwrite existing configurations in `control` - see [issue 42](https://github.com/OceansAus/access-om2/issues/42#issuecomment-346602379)
+
 ```{bash}
 cd /short/${PROJECT}/${USER}
 cd access-om2
@@ -67,7 +90,7 @@ tar zxvf input_b8053e87.tar.gz
 
 ## Compile
 
-Now to build each model. There several ways to do this. 
+Now to build each model. There are several ways to do this. 
 
 ### The easy way
 The easiest is simply
@@ -196,6 +219,12 @@ Each of the model configurations is run by payu from within its respective direc
 
 **You will need to edit `config.yaml` to set  `project` and `shortpath` appropriately.** Service units are charged to `project` and output is saved in `shortpath`.
 
+Also check that the line 
+```
+# postscript: sync_output_to_gdata.sh
+```
+is commented out in `$ACCESS_OM_DIR/control/1deg_jra55_ryf/config.yaml`, or if not, that `GDATADIR` in `sync_output_to_gdata.sh` that is in fact where you want output and restarts to be written.
+**WARNING: double-check `GDATADIR` so you don't overwrite existing output!** - see below.
 
 For example, to run the 1 degree JRA-55 RYF experiment:
 ```{bash}
@@ -236,7 +265,7 @@ You will need write access to `/g/data3/hh5/tmp/cosima/`, or at least to the sub
 
 **This example is for `1deg_jra55_ryf`; you'll need to make the obvious changes for other models.**
 
-First check the existing directories in `/g/data3/hh5/tmp/cosima/access-om2/` and create a new one with a unique name, e.g.
+First check the existing directories in `/g/data3/hh5/tmp/cosima/access-om2/` and **create a new one** with a **new, unique name**, e.g.
 ```
 mkdir /g/data3/hh5/tmp/cosima/access-om2/1deg_jra55_ryf_spinupN/
 ```
@@ -247,6 +276,7 @@ Now edit ``$ACCESS_OM_DIR/control/1deg_jra55_ryf/sync_output_to_gdata.sh`` to se
 GDATADIR=/g/data3/hh5/tmp/cosima/access-om2/1deg_jra55_ryf_spinupN/
 ```
 and also set an appropriate project for the PBS -P flag.
+**WARNING: it is crucial that ``GDATADIR`` is the new, empty directory you created above! If it is already exists you may overwrite output and restarts from previous experiments** (see [here](https://github.com/OceansAus/access-om2/issues/59)). **PLEASE DOUBLE-CHECK!**
 
 Finally, edit `$ACCESS_OM_DIR/control/1deg_jra55_ryf/config.yaml` to uncomment the line 
 ```
@@ -276,11 +306,12 @@ Please post an issue describing your problem at: https://github.com/OceansAus/ac
 
 ## Releases
 
-- pre-release: 5a1f28d56ab06c12a495c21af10cb55913bdba0b
-- pre-release bugfix: 8fe4429a46de61c27b74736300cad5998cdc9836
+1. pre-release: 5a1f28d56ab06c12a495c21af10cb55913bdba0b
+2. pre-release bugfix: 8fe4429a46de61c27b74736300cad5998cdc9836
     Containing, among others, the following changes/fixes: https://github.com/mom-ocean/MOM5/issues/175, https://github.com/mom-ocean/MOM5/issues/183, https://github.com/mom-ocean/MOM5/issues/184, https://github.com/OceansAus/access-om2/issues/13, https://github.com/OceansAus/access-om2/issues/12, https://github.com/OceansAus/access-om2/issues/11, https://github.com/mom-ocean/MOM5/issues/187
-- pre-release runoff spread: 0588afcb3df1737ae04829609c272ef1e590b807
-- pre-release salt fix: 71ee4a47b581bbd08a401dce3b063f581c584ddd
+3. pre-release runoff spread: 0588afcb3df1737ae04829609c272ef1e590b807
+4. pre-release salt fix: 71ee4a47b581bbd08a401dce3b063f581c584ddd
+5. pre-release YATM and libaccessom2: 1b47ad6ce3f8b98047e5328a26c38229f3f083f0
 
 ## References
 
