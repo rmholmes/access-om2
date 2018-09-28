@@ -158,7 +158,9 @@ class ExpTestHelper(object):
         return exename, r1 + r2
 
     def build_mom(self):
+        os.environ['ACCESS_OM_DIR'] = os.path.join(self.lab_path)
         os.environ['LIBACCESSOM2_ROOT'] = os.path.join(self.libaccessom2_src)
+
         mydir = os.getcwd()
         os.chdir(os.path.join(self.mom_src, 'exp'))
         r1 = sp.call(['./MOM_compile.csh', '--type', 'ACCESS-OM',
@@ -208,9 +210,9 @@ class ExpTestHelper(object):
         # Change to experiment directory and run.
         try:
             os.chdir(self.exp_path)
-            sp.check_output(['payu', 'sweep'])
-            run_id = sp.check_output(['payu', 'run'])
-            run_id = run_id.splitlines()[0]
+            sp.check_output(['payu', 'sweep', '--lab', self.lab_path])
+            run_id = sp.check_output(['payu', 'run', '--lab', self.lab_path])
+            run_id = run_id.decode().splitlines()[0]
             os.chdir(self.my_path)
         except sp.CalledProcessError as err:
             os.chdir(self.my_path)
@@ -246,7 +248,7 @@ class ExpTestHelper(object):
 
         # Read the qsub id of the collate job from the stdout.
         # Payu puts this here.
-        m = re.search(r'(\d{7}.r-man2)\n', stdout)
+        m = re.search(r'(\d+.r-man2)\n', stdout)
         if m is None:
             print('Error: qsub id of collate job.', file=sys.stderr)
             return 3, stdout, stderr, output_files
@@ -264,11 +266,10 @@ class ExpTestHelper(object):
 
 def run_exp(exp_name, force=False):
     my_path = os.path.dirname(os.path.realpath(__file__))
-    ret = sp.call([os.path.join(my_path, '../', 'get_input_data.py')])
-    assert ret == 0
 
     helper = ExpTestHelper(exp_name)
-    assert helper.build() == 0
+    exes, ret = helper.build()
+    assert ret == 0
     if force:
         ret, qso, qse, qsub_files = helper.force_run()
     else:

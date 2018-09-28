@@ -5,13 +5,16 @@
 
 set -e
 
+# Disable user gitconfig
+export GIT_CONFIG_NOGLOBAL=yes
+
 if [[ -z "${ACCESS_OM_DIR}" ]]; then
     echo "Installing ACCESS-OM2 in $(pwd)"
     export ACCESS_OM_DIR=$(pwd)
 fi
 export LIBACCESSOM2_ROOT=$ACCESS_OM_DIR/src/libaccessom2
 
-declare -a exepaths=(${ACCESS_OM_DIR}/src/mom/exec/nci/ACCESS-OM/fms_ACCESS-OM.x ${LIBACCESSOM2_ROOT}/build/bin/yatm.exe ${ACCESS_OM_DIR}/src/cice5/build_auscom_360x300_24p/cice_auscom_360x300_24p.exe ${ACCESS_OM_DIR}/src/cice5/build_auscom_1440x1080_480p/cice_auscom_1440x1080_480p.exe ${ACCESS_OM_DIR}/src/cice5/build_auscom_3600x2700_2000p/cice_auscom_3600x2700_2000p.exe)
+declare -a exepaths=(${ACCESS_OM_DIR}/src/mom/exec/nci/ACCESS-OM/fms_ACCESS-OM.x ${LIBACCESSOM2_ROOT}/build/bin/yatm.exe ${ACCESS_OM_DIR}/src/cice5/build_auscom_360x300_24p/cice_auscom_360x300_24p.exe ${ACCESS_OM_DIR}/src/cice5/build_auscom_1440x1080_480p/cice_auscom_1440x1080_480p.exe ${ACCESS_OM_DIR}/src/cice5/build_auscom_3600x2700_1392p/cice_auscom_3600x2700_1392p.exe)
 # ${ACCESS_OM_DIR}/src/matm/build_nt62/matm_nt62.exe
 # ${ACCESS_OM_DIR}/src/matm/build_jra55/matm_jra55.exe
 
