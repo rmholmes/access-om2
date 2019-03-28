@@ -1,101 +1,166 @@
 
-from exp_test_helper import run_exp
+from exp_test_helper import ExpTestHelper, setup_exp_from_base
 
 import pytest
-import yaml
+import f90nml
 import shutil
 import os
 import sys
 import re
 
-
 class TestBitReproducibility():
 
-    def checksums_to_list(self, filename, cpl_chksum=False):
+    def checksums_to_list(self, filename):
         """
         Look at each line an make a list of checksums
         """
 
-        if cpl_chksum:
-            regex = re.compile(r'\[chksum\]\s+.*\s+-?[0-9]+$')
-        else:
-            regex = re.compile(r'\[chksum\] Ice_ocean_boundary.*\s+-?[0-9]+$')
+        regex_a = re.compile(r'\[chksum\]\s+.*\s+-?[0-9]+$')
+        regex_b = re.compile(r'\[chksum\] Ice_ocean_boundary.*\s+-?[0-9]+$')
         l = []
         with open(filename) as f:
             for line in f:
-                m = regex.match(line)
-                if m is not None:
+                m = regex_a.match(line)
+                if m:
                     l.append(line)
-        l.sort()
-
+                else:
+                    m = regex_b.match(line)
+                    if m:
+                        l.append(line)
         return l
 
-    @pytest.mark.fast
-    def test_bit_repro(self):
+    @pytest.mark.slow
+    def test_bit_repro_repeat(self):
         """
         Test that a run reproduces saved checksums.
         """
 
-        exp = run_exp('1deg_jra55_ryf')
+        exp_bit_repo1 = setup_exp_from_base('1deg_jra55_iaf', '1deg_jra55_iaf_bit_repo1')
+        exp_bit_repo2 = setup_exp_from_base('1deg_jra55_iaf', '1deg_jra55_iaf_bit_repo2')
+
+        # Reconfigure to a 1 day and do run
+        for exp in [exp_bit_repo1, exp_bit_repo2]:
+            with open(exp.accessom2_config) as f:
+                nml = f90nml.read(f)
+
+            nml['date_manager_nml']['restart_period'] = [0, 0, 86400]
+            nml.write(exp.accessom2_config, force=True)
+            exp.build_and_run()
 
         # Compare expected to produced.
-        mom_chksums = os.path.join(exp.exp_path, 'ocean', 'checksums.txt')
-        expected = self.checksums_to_list(mom_chksums)
-        stdout = os.path.join(exp.archive, 'output000', 'access-om2.out')
-        produced = self.checksums_to_list(stdout)
+        assert os.path.exists(exp_bit_repo1.accessom2_out_000)
+        expected = self.checksums_to_list(exp_bit_repo1.accessom2_out_000)
+        expected.sort()
 
+        assert os.path.exists(exp_bit_repo2.accessom2_out_000)
+        produced = self.checksums_to_list(exp_bit_repo2.accessom2_out_000)
+        produced.sort()
+
+        if produced != expected:
+            with open('checksums-produced-test_bit_repo.txt', 'w') as f:
+                f.write('\n'.join(produced))
+            with open('checksums-expected-test_bit_repo.txt', 'w') as f:
+                f.write('\n'.join(expected))
+
+        assert len(produced) > 0
         assert len(produced) == len(expected)
         assert produced == expected
 
     @pytest.mark.slow
+    def test_bit_repro_historical(self):
+        """
+        Test that a run reproduces saved checksums.
+        """
+
+        exp_bit_repo = setup_exp_from_base('1deg_jra55_iaf', '1deg_jra55_iaf_bit_repo')
+
+        # Reconfigure to a 1 day and do run
+        with open(exp_bit_repo.accessom2_config) as f:
+            nml = f90nml.read(f)
+
+        nml['date_manager_nml']['restart_period'] = [0, 0, 86400]
+        nml.write(exp_bit_repo.accessom2_config, force=True)
+        exp_bit_repo.build_and_run()
+
+        assert os.path.exists(exp_bit_repo.accessom2_out_000)
+        produced = self.checksums_to_list(exp_bit_repo.accessom2_out_000)
+
+        # Compare expected to produced.
+        test_stdout = os.path.join(exp_bit_repo.exp_path, 'test', 'access-om2.out')
+        assert os.path.exists(test_stdout)
+        expected = self.checksums_to_list(test_stdout)
+
+        assert len(produced) > 0
+        for line in produced:
+            if line not in expected:
+                with open('checksums-produced-test_bit_repo.txt', 'w') as f:
+                    f.write('\n'.join(produced))
+                with open('checksums-expected-test_bit_repo.txt', 'w') as f:
+                    f.write('\n'.join(expected))
+
+
+    @pytest.mark.fast
     def test_restart_repro(self):
         """
         Test that a run reproduces across restarts.
         """
 
-        # First do two short (5 day) runs.
-        exp = run_exp('1deg_jra55_ryf')
-        exp.force_run()
+        # First do two short (1 day) runs.
+        exp_2x1day = setup_exp_from_base('1deg_jra55_iaf', '1deg_jra55_iaf_2x1day')
 
-        # Do a single 10 day run
-        # Start by copying experiment and modifying the experiment.
-        exp_10day = os.path.join(exp.control_path, '1deg_jra55_ryf_10day')
-        if not os.path.exists(exp_10day):
-            shutil.copytree(exp.exp_path, exp_10day, symlinks=True)
-        try:
-            os.remove(os.path.join(exp_10day, 'archive'))
-        except OSError:
-            pass
-        try:
-            os.remove(os.path.join(exp_10day, 'work'))
-        except OSError:
-            pass
+        # Reconfigure to a 1 day run.
+        with open(exp_2x1day.accessom2_config) as f:
+            nml = f90nml.read(f)
 
-        # Change to a 10 day run.
-        config = os.path.join(exp_10day, 'config.yaml')
-        with open(config) as f:
-            doc = yaml.load(f)
+        nml['date_manager_nml']['restart_period'] = [0, 0, 86400]
+        nml.write(exp_2x1day.accessom2_config, force=True)
 
-        doc['calendar']['runtime']['days'] = 10
-        doc['jobname'] = '1deg_jra55_ryf_10day'
+        # Don't use Redsea fix - this breaks reproducibility
+        # https://github.com/OceansAus/access-om2/issues/124
+        with open(exp_2x1day.ocean_config) as f:
+            nml = f90nml.read(f)
 
-        with open(config, 'w') as f:
-            yaml.dump(doc, f)
+        nml['auscom_ice_nml']['redsea_gulfbay_sfix'] = False
+        nml.write(exp_2x1day.ocean_config, force=True)
 
-        exp_10day = run_exp('1deg_jra55_ryf_10day')
+        # Now run twice.
+        exp_2x1day.build_and_run()
+        exp_2x1day.force_run()
+
+        # Now do a single 2 day run
+        exp_2day = setup_exp_from_base('1deg_jra55_iaf', '1deg_jra55_iaf_2day')
+        # Reconfigure
+        with open(exp_2day.accessom2_config) as f:
+            nml = f90nml.read(f)
+
+        nml['date_manager_nml']['restart_period'] = [0, 0, 172800]
+        nml.write(exp_2day.accessom2_config, force=True)
+
+        # Don't use Redsea fix - this breaks reproducibility
+        # https://github.com/OceansAus/access-om2/issues/124
+        with open(exp_2day.ocean_config) as f:
+            nml = f90nml.read(f)
+
+        nml['auscom_ice_nml']['redsea_gulfbay_sfix'] = False
+        nml.write(exp_2day.ocean_config, force=True)
+
+        # Run once.
+        exp_2day.build_and_run()
 
         # Now compare the output between our two short and one long run.
-        stdout0 = os.path.join(exp.archive, 'output000', 'access-om2.out')
-        two_shrt = self.checksums_to_list(stdout0, cpl_chksum=True)
-        stdout1 = os.path.join(exp.archive, 'output001', 'access-om2.out')
-        two_shrt = two_shrt + self.checksums_to_list(stdout1, cpl_chksum=True)
-        two_shrt.sort()
+        two_shrt = self.checksums_to_list(exp_2x1day.accessom2_out_000)
+        two_shrt = two_shrt + self.checksums_to_list(exp_2x1day.accessom2_out_001)
 
-        stdout = os.path.join(exp_10day.archive, 'output000', 'access-om2.out')
-        one_long = self.checksums_to_list(stdout)
+        one_long = self.checksums_to_list(exp_2day.accessom2_out_000)
 
-        assert len(two_shrt) == len(one_long)
-        assert two_shrt == one_long
+        assert len(one_long) > 0
+        for line in one_long:
+            if line not in two_shrt:
+                with open('checksums-two_short-test_restart_repo.txt', 'w') as f:
+                    f.write('\n'.join(two_shrt))
+                with open('checksums-one_long-test_restart_repo.txt', 'w') as f:
+                    f.write('\n'.join(one_long))
+                assert line in two_shrt
 
         # Additionally check that the temp and salt fields of the final restart
         # are identical

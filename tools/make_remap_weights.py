@@ -36,19 +36,8 @@ def convert_to_scrip_output(weights):
     my_dir = os.path.dirname(os.path.realpath(__file__))
 
     _, new_weights = tempfile.mkstemp(suffix='.nc', dir=my_dir)
-    _, tmp1 = tempfile.mkstemp(suffix='.nc', dir=my_dir)
-    _, tmp2 = tempfile.mkstemp(suffix='.nc', dir=my_dir)
     # So that ncrename doesn't prompt for overwrite.
     os.remove(new_weights)
-    os.remove(tmp1)
-    os.remove(tmp2)
-
-    # ncrename is horrible so we need to convert to netCDF3 64 bit offset and back.
-    try:
-        sp.check_output(['nccopy', '-k', '64-bit offset', weights, tmp1])
-    except sp.CalledProcessError as e:
-        print(e.output, file=sys.stderr)
-        sys.exit(1)
 
     cmdstring = ('ncrename -d n_a,src_grid_size -d n_b,dst_grid_size -d n_s,'
                  'num_links -d nv_a,src_grid_corners -d nv_b,dst_grid_corner'
@@ -60,19 +49,14 @@ def convert_to_scrip_output(weights):
                  'grid_area -v area_b,dst_grid_area -v frac_a,src_grid_frac '
                  '-v frac_b,dst_grid_frac -v col,src_address -v row,dst_addr'
                  'ess {} {}')
-    cmd = cmdstring.format(tmp1, tmp2)
+    cmd = cmdstring.format(weights, new_weights)
 
     try:
         sp.check_output(shlex.split(cmd))
     except sp.CalledProcessError as e:
+        print(cmd, file=sys.stderr)
         print(e.output, file=sys.stderr)
-        sys.exit(1)
-
-    try:
-        sp.check_output(['nccopy', '-k', 'netCDF-4', tmp2, new_weights])
-    except sp.CalledProcessError as e:
-        print(e.output, file=sys.stderr)
-        sys.exit(1)
+        return None
 
     # Fix the dimension of the remap_matrix.
     with nc.Dataset(weights) as f_old, nc.Dataset(new_weights, 'r+') as f_new:
@@ -80,8 +64,6 @@ def convert_to_scrip_output(weights):
                                             'f8', ('num_links', 'num_wgts'))
         remap_matrix[:, 0] = f_old.variables['S'][:]
 
-    os.remove(tmp1)
-    os.remove(tmp2)
     os.remove(weights)
 
     return new_weights
@@ -175,9 +157,9 @@ def main():
     parser.add_argument('--ocean', default=None, help="""
                         Ocean grid to regrid to, can be one of:
                         MOM1, MOM01, MOM025""")
-    parser.add_argument('--method', default='conserve2nd', help="""
+    parser.add_argument('--method', default=None, help="""
                         The interpolation method to use, can be patch or conserve2nd""")
-    parser.add_argument('--npes', default=1, help="""
+    parser.add_argument('--npes', default=None, help="""
                         The number of PEs to use.""")
 
     args = parser.parse_args()
@@ -208,6 +190,10 @@ def main():
     else:
         args.method = [args.method]
 
+    if args.npes is None:
+        import multiprocessing as mp
+        args.npes = mp.cpu_count() // 2
+
     grid_file_dict = find_grid_defs(args.input_dir, args.jra55_input, args.core_input)
 
     for ocean in args.ocean:
@@ -232,7 +218,11 @@ def main():
 
                 weights = create_weights(src_grid, dest_grid, args.npes,
                                          method)
+                if not weights:
+                    return 1
                 weights = convert_to_scrip_output(weights)
+                if not weights:
+                    return 1
 
                 shutil.move(weights, '{}_{}_{}.nc'.format(atm, ocean, method))
 
